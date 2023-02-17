@@ -100,6 +100,7 @@ func main() {
 
 	// 逐条SQL给出优化建议
 	for ; ; sqlCounter++ {
+
 		var id string                                     // fingerprint.ID
 		heuristicSuggest := make(map[string]advisor.Rule) // 启发式建议
 		expSuggest := make(map[string]advisor.Rule)       // EXPLAIN 解读
@@ -112,12 +113,16 @@ func main() {
 			common.Log.Debug("Ending, buf: '%s', sql: '%s'", buf, sql)
 			break
 		}
+
 		// 查询请求切分
 		orgSQL, sql, bufBytes := ast.SplitStatement([]byte(buf), []byte(common.Config.Delimiter))
+
 		// lineCounter
 		lc := ast.NewLines([]byte(orgSQL))
+
 		// leftLineCounter
 		llc := ast.LeftNewLines([]byte(orgSQL))
+
 		lineCounter += llc
 		if len(buf) == len(bufBytes) {
 			// 防止切分死循环，当剩余的内容和原 SQL 相同时直接清空 buf
@@ -137,9 +142,12 @@ func main() {
 		common.Log.Debug("main loop SQL: %s", sql)
 
 		// +++++++++++++++++++++小工具集[开始]+++++++++++++++++++++++{
+		// SQL 指纹
 		fingerprint := strings.TrimSpace(query.Fingerprint(sql))
 		// SQL 签名
 		id = query.Id(fingerprint)
+
+
 		currentDB = env.CurrentDB(sql, currentDB)
 		switch common.Config.ReportType {
 		case "fingerprint":
@@ -198,11 +206,15 @@ func main() {
 		tables[id] = ast.SchemaMetaInfo(sql, currentDB)
 		// +++++++++++++++++++++小工具集[结束]+++++++++++++++++++++++}
 
+
+
 		// +++++++++++++++++++++语法检查[开始]+++++++++++++++++++++++{
+
+		// 语法解析
 		q, syntaxErr := advisor.NewQuery4Audit(sql)
 		stmt := q.Stmt
 
-		// 如果语法检查出错则不需要给优化建议
+		// 语法错误，不需要给优化建议
 		if syntaxErr != nil {
 			errContent := fmt.Sprintf("At SQL %d : %v", sqlCounter, syntaxErr)
 			common.Log.Warning(errContent)
@@ -214,10 +226,12 @@ func main() {
 			// tidb parser 语法检查给出的建议 ERR.000
 			mysqlSuggest["ERR.000"] = advisor.RuleMySQLError("ERR.000", syntaxErr)
 		}
+
 		// 如果只想检查语法直接跳过后面的步骤
 		if common.Config.OnlySyntaxCheck {
 			continue
 		}
+
 		// +++++++++++++++++++++语法检查[结束]+++++++++++++++++++++++}
 
 		switch common.Config.ReportType {
@@ -243,6 +257,11 @@ func main() {
 		}
 		common.Log.Debug("end of heuristic advisor Query: %s", q.Query)
 		// +++++++++++++++++++++启发式规则建议[结束]+++++++++++++++++++++++}
+
+
+
+
+
 
 		// +++++++++++++++++++++索引优化建议[开始]+++++++++++++++++++++++{
 		// 如果配置了索引建议过滤规则，不进行索引优化建议
@@ -294,6 +313,11 @@ func main() {
 		common.Log.Debug("end of index advisor Query: %s", q.Query)
 		// +++++++++++++++++++++索引优化建议[结束]+++++++++++++++++++++++}
 
+
+
+
+
+
 		// +++++++++++++++++++++EXPLAIN 建议[开始]+++++++++++++++++++++++{
 		// 如果未配置 Online 或 Test 无法给 Explain 建议
 		common.Log.Debug("start of explain Query: %s", q.Query)
@@ -326,6 +350,10 @@ func main() {
 		}
 		common.Log.Debug("end of explain Query: %s", q.Query)
 		// +++++++++++++++++++++ EXPLAIN 建议[结束]+++++++++++++++++++++++}
+
+
+
+
 
 		// +++++++++++++++++++++ Profiling [开始]+++++++++++++++++++++++++{
 		common.Log.Debug("start of profiling Query: %s", q.Query)

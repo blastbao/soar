@@ -41,6 +41,8 @@ type Query4Audit struct {
 }
 
 // NewQuery4Audit return a struct for Query4Audit
+//
+// 语法解析
 func NewQuery4Audit(sql string, options ...string) (*Query4Audit, error) {
 	var err, vErr error
 	var charset string
@@ -55,6 +57,7 @@ func NewQuery4Audit(sql string, options ...string) (*Query4Audit, error) {
 	}
 
 	q := &Query4Audit{Query: sql}
+
 	// vitess 语法解析不上报，以 tidb parser 为主
 	q.Stmt, vErr = sqlparser.Parse(sql)
 	if vErr != nil {

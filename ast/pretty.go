@@ -50,6 +50,8 @@ func Pretty(sql string, method string) (output string) {
 // format the whitespace in a SQL string to make it easier to read.
 // @param string  $query    The SQL string
 // @return String The SQL string with HTML styles and formatting wrapped in a <pre> tag
+//
+// format 格式化输出 SQL
 func format(query string) string {
 	// This variable will be populated with formatted html
 	result := ""
@@ -72,7 +74,7 @@ func format(query string) string {
 	// Remove existing whitespace//
 	var tokens []Token
 	for i, token := range originalTokens {
-		if token.Type != TokenTypeWhitespace {
+		if token.Type != TokenTypeWhitespace { // 忽略空白
 			token.i = i
 			tokens = append(tokens, token)
 		}

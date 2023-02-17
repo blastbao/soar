@@ -39,6 +39,7 @@ func initConfig() {
 	}
 	common.BaseDir = filepath.Dir(ex)
 
+	// 命令行参数
 	for i, c := range os.Args {
 		// 如果指定了 -config, 它必须是第一个参数
 		if strings.HasPrefix(c, "-config") && i != 1 {

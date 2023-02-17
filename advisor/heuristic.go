@@ -45,19 +45,25 @@ func (q *Query4Audit) RuleOK() Rule {
 // RuleImplicitAlias ALI.001
 func (q *Query4Audit) RuleImplicitAlias() Rule {
 	var rule = q.RuleOK()
+
+	// 词法分析
 	tkns := ast.Tokenizer(q.Query)
 	if len(tkns) == 0 {
 		return rule
 	}
+	// 要求是 select 语句
 	if tkns[0].Type != sqlparser.SELECT {
 		return rule
 	}
+
+	// 如果有连续的两个 identifier ，则是隐藏的 "AS" 语句
 	for i, tkn := range tkns {
 		if tkn.Type == sqlparser.ID && i+1 < len(tkns) && tkn.Type == tkns[i+1].Type {
 			rule = HeuristicRules["ALI.001"]
 			break
 		}
 	}
+
 	return rule
 }
 
@@ -76,10 +82,12 @@ func (q *Query4Audit) RuleStarAlias() Rule {
 // RuleSameAlias ALI.003
 func (q *Query4Audit) RuleSameAlias() Rule {
 	var rule = q.RuleOK()
+
 	err := sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 		switch expr := node.(type) {
 		case *sqlparser.AliasedExpr:
 			switch n := expr.Expr.(type) {
+			// 列名和 AS 后的值相同
 			case *sqlparser.ColName:
 				if n.Name.String() == expr.As.String() {
 					rule = HeuristicRules["ALI.003"]
@@ -88,6 +96,7 @@ func (q *Query4Audit) RuleSameAlias() Rule {
 			}
 		case *sqlparser.AliasedTableExpr:
 			switch n := expr.Expr.(type) {
+			// 表名和 AS 后的值相同
 			case sqlparser.TableName:
 				if n.Name.String() == expr.As.String() {
 					rule = HeuristicRules["ALI.003"]
@@ -102,12 +111,18 @@ func (q *Query4Audit) RuleSameAlias() Rule {
 }
 
 // RulePrefixLike ARG.001
+//
+// 检查 like 的右值中是否以 '%', '_' 开头
 func (q *Query4Audit) RulePrefixLike() Rule {
 	var rule = q.RuleOK()
 	err := sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 		switch expr := node.(type) {
+		// 比较表达式
 		case *sqlparser.ComparisonExpr:
+			// 操作符
 			if strings.ToLower(expr.Operator) == "like" {
+				// 检查右值的类型，如果是值类型，且为字符串类型，且以 '%', '_' 开头，则是通配查询，不合规
+				// 备注，like 前缀查询的右值，应该是以字母开头而非通配符。
 				switch sqlval := expr.Right.(type) {
 				case *sqlparser.SQLVal:
 					// prefix like with '%', '_'
@@ -125,17 +140,24 @@ func (q *Query4Audit) RulePrefixLike() Rule {
 }
 
 // RuleEqualLike ARG.002
+//
+// 检查 like 的右值中是否包含 '%', '_'
 func (q *Query4Audit) RuleEqualLike() Rule {
 	var rule = q.RuleOK()
 	err := sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 		switch expr := node.(type) {
+		// 比较表达式
 		case *sqlparser.ComparisonExpr:
+			// 操作符
 			if strings.ToLower(expr.Operator) == "like" {
+				// 检查右值的类型，
 				switch sqlval := expr.Right.(type) {
 				case *sqlparser.SQLVal:
 					// 1. string that not contain '%', '_'
 					// 2. int, bit, float without wildcard
 					var hasWildCard bool
+
+					// 若是字符串类型，检查其中是否包含 '%', '_'
 					if sqlval.Type == 0 {
 						for _, sqlElem := range sqlval.Val {
 							if sqlElem == 0x25 || sqlElem == 0x5f {
@@ -3459,11 +3481,14 @@ func (q *Query4Audit) RuleBlobDefaultValue() Rule {
 		for _, tiStmt := range q.TiStmt {
 			switch node := tiStmt.(type) {
 			case *tidb.CreateTableStmt:
+				// 遍历建表语句中的各个列
 				for _, col := range node.Cols {
+					// 类型
 					if col.Tp == nil {
 						continue
 					}
 					switch col.Tp.Tp {
+					// 文本类型
 					case mysql.TypeBlob, mysql.TypeMediumBlob, mysql.TypeTinyBlob, mysql.TypeLongBlob, mysql.TypeJSON:
 						for _, opt := range col.Options {
 							if opt.Tp == tidb.ColumnOptionDefaultValue && opt.Expr.GetType().Tp != mysql.TypeNull {
@@ -3680,6 +3705,8 @@ func (q *Query4Audit) RuleTimePrecision() Rule {
 }
 
 // RuleNoOSCKey KEY.002
+//
+//
 func (q *Query4Audit) RuleNoOSCKey() Rule {
 	var rule = q.RuleOK()
 	switch s := q.Stmt.(type) {
@@ -3698,6 +3725,8 @@ func (q *Query4Audit) RuleNoOSCKey() Rule {
 }
 
 // RuleTooManyFields COL.006
+//
+// 检查建表语句中的 column 数目是否过多
 func (q *Query4Audit) RuleTooManyFields() Rule {
 	var rule = q.RuleOK()
 	switch q.Stmt.(type) {
@@ -3715,11 +3744,15 @@ func (q *Query4Audit) RuleTooManyFields() Rule {
 }
 
 // RuleMaxTextColsCount COL.007
+//
+// 检查 blob 文本类型 column 的总数是否超过限制，若是则返回规则 "COL.007"
 func (q *Query4Audit) RuleMaxTextColsCount() Rule {
 	var textColsCount int
 	var rule = q.RuleOK()
+
 	switch q.Stmt.(type) {
 	case *sqlparser.DDL:
+		// 遍历 TiDB 解析出的 AST
 		for _, tiStmt := range q.TiStmt {
 			switch node := tiStmt.(type) {
 			case *tidb.CreateTableStmt:
@@ -3735,6 +3768,8 @@ func (q *Query4Audit) RuleMaxTextColsCount() Rule {
 			}
 		}
 	}
+
+	// 如果总数是否超过限制，就返回规则 "COL.007"
 	if textColsCount > common.Config.MaxTextColsCount {
 		rule = HeuristicRules["COL.007"]
 	}
@@ -3743,6 +3778,8 @@ func (q *Query4Audit) RuleMaxTextColsCount() Rule {
 }
 
 // RuleMaxTextColsCount COL.007 checking for existed table
+//
+// 检查 blob 文本类型 column 的总数是否超过限制
 func (idxAdv *IndexAdvisor) RuleMaxTextColsCount() Rule {
 	rule := HeuristicRules["OK"]
 	// 未开启测试环境不进行检查
@@ -3765,16 +3802,19 @@ func (idxAdv *IndexAdvisor) RuleMaxTextColsCount() Rule {
 				return false, err
 			}
 
+			// 语法解析
 			q, err := NewQuery4Audit(ddl)
 			if err != nil {
 				return false, err
 			}
 
+			// 检查 blob 文本类型 column 的总数是否超过限制，若是则返回规则 "COL.007"
 			r := q.RuleMaxTextColsCount()
 			if r.Item != "OK" {
 				rule = r
 				return false, nil
 			}
+
 		}
 		return true, nil
 	}, idxAdv.Ast)
@@ -3783,6 +3823,8 @@ func (idxAdv *IndexAdvisor) RuleMaxTextColsCount() Rule {
 }
 
 // RuleAllowEngine TBL.002
+//
+// 检查是否使用了推荐的存储引擎
 func (q *Query4Audit) RuleAllowEngine() Rule {
 	var rule = q.RuleOK()
 	var hasDefaultEngine bool
@@ -3790,9 +3832,13 @@ func (q *Query4Audit) RuleAllowEngine() Rule {
 	switch q.Stmt.(type) {
 	case *sqlparser.DDL:
 		for _, tiStmt := range q.TiStmt {
+
 			switch node := tiStmt.(type) {
+			// 建表语句
 			case *tidb.CreateTableStmt:
+				// 表选项
 				for _, opt := range node.Options {
+					// 存储引擎
 					if opt.Tp == tidb.TableOptionEngine {
 						hasDefaultEngine = true
 						// 使用了非推荐的存储引擎
@@ -3813,6 +3859,7 @@ func (q *Query4Audit) RuleAllowEngine() Rule {
 					rule = HeuristicRules["TBL.002"]
 					break
 				}
+			// 改表语句
 			case *tidb.AlterTableStmt:
 				for _, spec := range node.Specs {
 					switch spec.Tp {
